@@ -1,11 +1,13 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public static class SpriteFactory
 {
     private static Sprite _square;
     private static Sprite _circle;
-    private static Sprite _pacman;
     private static Sprite _ghost;
+    private static Sprite _cherry;
+    private static readonly Dictionary<int, Sprite> PacmanCache = new Dictionary<int, Sprite>();
 
     public static Sprite Square
     {
@@ -16,8 +18,7 @@ public static class SpriteFactory
                 var tex = new Texture2D(8, 8) { filterMode = FilterMode.Point };
                 var px = new Color[64];
                 for (int i = 0; i < px.Length; i++) px[i] = Color.white;
-                tex.SetPixels(px);
-                tex.Apply();
+                tex.SetPixels(px); tex.Apply();
                 _square = Sprite.Create(tex, new Rect(0, 0, 8, 8), new Vector2(0.5f, 0.5f), 8);
             }
             return _square;
@@ -31,59 +32,48 @@ public static class SpriteFactory
             if (_circle == null)
             {
                 int size = 64;
-                var tex = new Texture2D(size, size) { filterMode = FilterMode.Bilinear };
+                var tex = new Texture2D(size, size) { filterMode = FilterMode.Point };
                 var px = new Color[size * size];
-                float r = size / 2f - 2f;
-                float c = size / 2f - 0.5f;
-                for (int y = 0; y < size; y++)
-                {
-                    for (int x = 0; x < size; x++)
-                    {
-                        float dx = x - c, dy = y - c;
-                        px[y * size + x] = (dx * dx + dy * dy <= r * r) ? Color.white : Color.clear;
-                    }
-                }
-                tex.SetPixels(px);
-                tex.Apply();
+                DrawCircle(px, size, size / 2f - 0.5f, size / 2f - 0.5f, size / 2f - 2f, Color.white);
+                tex.SetPixels(px); tex.Apply();
                 _circle = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
             }
             return _circle;
         }
     }
 
-    public static Sprite PacmanSprite
+    public static Sprite GetPacmanSprite(int mouthAngleDeg)
     {
-        get
+        mouthAngleDeg = Mathf.Clamp(mouthAngleDeg, 0, 60);
+        if (PacmanCache.TryGetValue(mouthAngleDeg, out var cached)) return cached;
+
+        int size = 64;
+        var tex = new Texture2D(size, size) { filterMode = FilterMode.Point };
+        var px = new Color[size * size];
+        float r = size / 2f - 2f;
+        float c = size / 2f - 0.5f;
+        float mouthHalfDeg = mouthAngleDeg * 0.5f;
+
+        for (int y = 0; y < size; y++)
         {
-            if (_pacman == null)
+            for (int x = 0; x < size; x++)
             {
-                int size = 64;
-                var tex = new Texture2D(size, size) { filterMode = FilterMode.Bilinear };
-                var px = new Color[size * size];
-                float r = size / 2f - 2f;
-                float c = size / 2f - 0.5f;
-                float mouthHalf = 30f * Mathf.Deg2Rad;
-                for (int y = 0; y < size; y++)
-                {
-                    for (int x = 0; x < size; x++)
-                    {
-                        float dx = x - c, dy = y - c;
-                        if (dx * dx + dy * dy > r * r) { px[y * size + x] = Color.clear; continue; }
-                        float ang = Mathf.Atan2(dy, dx);
-                        // mouth opens to the right (0 rad)
-                        if (Mathf.Abs(Mathf.DeltaAngle(ang * Mathf.Rad2Deg, 0f)) < mouthHalf * Mathf.Rad2Deg)
-                            px[y * size + x] = Color.clear;
-                        else
-                            px[y * size + x] = Color.white;
-                    }
-                }
-                tex.SetPixels(px);
-                tex.Apply();
-                _pacman = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+                float dx = x - c, dy = y - c;
+                if (dx * dx + dy * dy > r * r) { px[y * size + x] = Color.clear; continue; }
+                float angDeg = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
+                if (mouthAngleDeg > 0 && Mathf.Abs(Mathf.DeltaAngle(angDeg, 0f)) < mouthHalfDeg)
+                    px[y * size + x] = Color.clear;
+                else
+                    px[y * size + x] = Color.white;
             }
-            return _pacman;
         }
+        tex.SetPixels(px); tex.Apply();
+        var sprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+        PacmanCache[mouthAngleDeg] = sprite;
+        return sprite;
     }
+
+    public static Sprite PacmanSprite => GetPacmanSprite(30);
 
     public static Sprite GhostSprite
     {
@@ -92,60 +82,78 @@ public static class SpriteFactory
             if (_ghost == null)
             {
                 int size = 64;
-                var tex = new Texture2D(size, size) { filterMode = FilterMode.Bilinear };
+                var tex = new Texture2D(size, size) { filterMode = FilterMode.Point };
                 var px = new Color[size * size];
-
-                float cx = size / 2f - 0.5f;        // центр по X
-                float cy = size * 0.62f;            // центр «купола» (верхняя полусфера)
-                float radius = size * 0.36f;        // радиус купола = половина ширины тела
+                float cx = size / 2f - 0.5f;
+                float cy = size * 0.62f;
+                float radius = size * 0.36f;
                 float bodyHalfWidth = radius;
-                float bodyBottom = size * 0.20f;    // где заканчиваются прямые бока
-                float footHeight = size * 0.12f;    // насколько ножки выступают вниз
-                int numFeet = 3;
+                float bodyBottom = size * 0.20f;
+                float footHeight = size * 0.12f;
+                int numFeet = 4;
                 float footWidth = (2f * bodyHalfWidth) / numFeet;
 
                 for (int y = 0; y < size; y++)
                 {
                     for (int x = 0; x < size; x++)
                     {
-                        float dx = x - cx;
-                        float dy = y - cy;
+                        float dx = x - cx, dy = y - cy;
                         bool inside = false;
-
-                        if (y >= cy)
-                        {
-                            // Верхняя полусфера
-                            inside = dx * dx + dy * dy <= radius * radius;
-                        }
+                        if (y >= cy) inside = dx * dx + dy * dy <= radius * radius;
                         else if (Mathf.Abs(dx) <= bodyHalfWidth)
                         {
-                            if (y >= bodyBottom)
-                            {
-                                // Прямые бока
-                                inside = true;
-                            }
+                            if (y >= bodyBottom) inside = true;
                             else
                             {
-                                // Ножки-треугольники
                                 float localX = dx + bodyHalfWidth;
                                 int footIndex = Mathf.Clamp(Mathf.FloorToInt(localX / footWidth), 0, numFeet - 1);
                                 float localInFoot = localX - footIndex * footWidth;
-                                // треугольник: 1 в центре ножки, 0 на её краю
                                 float triangle = 1f - Mathf.Abs((localInFoot / footWidth) * 2f - 1f);
-                                float edgeY = bodyBottom - footHeight * triangle;
-                                inside = y >= edgeY;
+                                inside = y >= bodyBottom - footHeight * triangle;
                             }
                         }
-
                         px[y * size + x] = inside ? Color.white : Color.clear;
                     }
                 }
-
-                tex.SetPixels(px);
-                tex.Apply();
+                tex.SetPixels(px); tex.Apply();
                 _ghost = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
             }
             return _ghost;
+        }
+    }
+
+    public static Sprite CherrySprite
+    {
+        get
+        {
+            if (_cherry == null)
+            {
+                int size = 64;
+                var tex = new Texture2D(size, size) { filterMode = FilterMode.Point };
+                var px = new Color[size * size];
+                for (int i = 0; i < px.Length; i++) px[i] = Color.clear;
+
+                var red = new Color(0.92f, 0.10f, 0.10f);
+                var green = new Color(0.20f, 0.75f, 0.20f);
+                var shine = new Color(1f, 0.75f, 0.75f);
+
+                DrawCircle(px, size, 20f, 20f, 14f, red);
+                DrawCircle(px, size, 44f, 22f, 14f, red);
+                DrawCircle(px, size, 15f, 25f, 3f, shine);
+                DrawCircle(px, size, 39f, 27f, 3f, shine);
+
+                for (int i = 0; i < 24; i++)
+                {
+                    float t = i / 23f;
+                    float y = Mathf.Lerp(34f, 56f, t);
+                    DrawCircle(px, size, Mathf.Lerp(20f, 32f, t), y, 2.2f, green);
+                    DrawCircle(px, size, Mathf.Lerp(44f, 32f, t), y, 2.2f, green);
+                }
+
+                tex.SetPixels(px); tex.Apply();
+                _cherry = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+            }
+            return _cherry;
         }
     }
 
@@ -157,5 +165,16 @@ public static class SpriteFactory
         sr.color = color;
         sr.sortingOrder = order;
         return go;
+    }
+
+    private static void DrawCircle(Color[] px, int size, float cx, float cy, float r, Color color)
+    {
+        float r2 = r * r;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy <= r2) px[y * size + x] = color;
+            }
     }
 }

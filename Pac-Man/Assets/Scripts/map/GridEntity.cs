@@ -61,7 +61,7 @@ public abstract class GridEntity : MonoBehaviour
 
     protected abstract void OnTileReached();
 
-    protected bool CanMove(Vector2Int dir, bool ghost = false)
+    protected virtual bool CanMove(Vector2Int dir, bool ghost = false)
     {
         if (dir == Vector2Int.zero) return false;
         Vector2Int next = CurrentTile + dir;
